@@ -102,6 +102,7 @@ typedef __m128d rx_vec_f128;
 #define rx_aligned_alloc(a, b) _mm_malloc(a,b)
 #define rx_aligned_free(a) _mm_free(a)
 #define rx_prefetch_nta(x) _mm_prefetch((const char *)(x), _MM_HINT_NTA)
+#define rx_prefetch_t0(x) _mm_prefetch((const char *)(x), _MM_HINT_T0)
 
 #define rx_load_vec_f128 _mm_load_pd
 #define rx_store_vec_f128 _mm_store_pd
@@ -172,6 +173,10 @@ FORCE_INLINE void rx_set_rounding_mode(uint32_t mode) {
 	_mm_setcsr(rx_mxcsr_default | (mode << 13));
 }
 
+FORCE_INLINE uint32_t rx_get_rounding_mode() {
+	return (_mm_getcsr() >> 13) & 3;
+}
+
 #elif defined(__PPC64__) && defined(__ALTIVEC__) && defined(__VSX__) //sadly only POWER7 and newer will be able to use SIMD acceleration. Earlier processors cant use doubles or 64 bit integers with SIMD
 #include <cstdint>
 #include <stdexcept>
@@ -201,6 +206,7 @@ typedef union{
 #define rx_aligned_alloc(a, b) malloc(a)
 #define rx_aligned_free(a) free(a)
 #define rx_prefetch_nta(x)
+#define rx_prefetch_t0(x)
 
 /* Splat 64-bit long long to 2 64-bit long longs */
 FORCE_INLINE __m128i vec_splat2sd (int64_t scalar)
@@ -331,19 +337,19 @@ FORCE_INLINE int rx_vec_i128_w(rx_vec_i128 a) {
 	return _a.i32[3];
 }
 
-FORCE_INLINE rx_vec_i128 rx_set_int_vec_i128(int _I3, int _I2, int _I1, int _I0) {
-	return (rx_vec_i128)((__m128li){_I0,_I1,_I2,_I3});
+FORCE_INLINE rx_vec_i128 rx_set_int_vec_i128(int i3, int i2, int i1, int i0) {
+	return (rx_vec_i128)((__m128li){i0,i1,i2,i3});
 };
 
-FORCE_INLINE rx_vec_i128 rx_xor_vec_i128(rx_vec_i128 _A, rx_vec_i128 _B) {
-	return (rx_vec_i128)vec_xor(_A,_B);
+FORCE_INLINE rx_vec_i128 rx_xor_vec_i128(rx_vec_i128 a, rx_vec_i128 b) {
+	return (rx_vec_i128)vec_xor(a,b);
 }
 
-FORCE_INLINE rx_vec_i128 rx_load_vec_i128(rx_vec_i128 const *_P) {
+FORCE_INLINE rx_vec_i128 rx_load_vec_i128(rx_vec_i128 const *p) {
 #if defined(NATIVE_LITTLE_ENDIAN)
-	return *_P;
+	return *p;
 #else
-	uint32_t* ptr = (uint32_t*)_P;
+	const uint32_t* ptr = (const uint32_t*)p;
 	vec_u c;
 	c.u32[0] = load32(ptr + 0);
 	c.u32[1] = load32(ptr + 1);
@@ -353,13 +359,13 @@ FORCE_INLINE rx_vec_i128 rx_load_vec_i128(rx_vec_i128 const *_P) {
 #endif
 }
 
-FORCE_INLINE void rx_store_vec_i128(rx_vec_i128 *_P, rx_vec_i128 _B) {
+FORCE_INLINE void rx_store_vec_i128(rx_vec_i128 *p, rx_vec_i128 b) {
 #if defined(NATIVE_LITTLE_ENDIAN)
-	*_P = _B;
+	*p = b;
 #else
-	uint32_t* ptr = (uint32_t*)_P;
+	uint32_t* ptr = (uint32_t*)p;
 	vec_u B;
-	B.i = _B;
+	B.i = b;
 	store32(ptr + 0, B.u32[0]);
 	store32(ptr + 1, B.u32[1]);
 	store32(ptr + 2, B.u32[2]);
@@ -369,8 +375,8 @@ FORCE_INLINE void rx_store_vec_i128(rx_vec_i128 *_P, rx_vec_i128 _B) {
 
 FORCE_INLINE rx_vec_f128 rx_cvt_packed_int_vec_f128(const void* addr) {
 	vec_u x;
-	x.d64[0] = (double)unsigned32ToSigned2sCompl(load32((uint8_t*)addr + 0));
-	x.d64[1] = (double)unsigned32ToSigned2sCompl(load32((uint8_t*)addr + 4));
+	x.d64[0] = (double)unsigned32ToSigned2sCompl(load32((const uint8_t*)addr + 0));
+	x.d64[1] = (double)unsigned32ToSigned2sCompl(load32((const uint8_t*)addr + 4));
 	return (rx_vec_f128)x.d;
 }
 
@@ -396,6 +402,10 @@ inline void* rx_aligned_alloc(size_t size, size_t align) {
 #define rx_aligned_free(a) free(a)
 
 inline void rx_prefetch_nta(void* ptr) {
+	asm volatile ("prfm pldl1strm, [%0]\n" : : "r" (ptr));
+}
+
+inline void rx_prefetch_t0(const void* ptr) {
 	asm volatile ("prfm pldl1strm, [%0]\n" : : "r" (ptr));
 }
 
@@ -477,12 +487,12 @@ FORCE_INLINE int rx_vec_i128_w(rx_vec_i128 a) {
 	return vgetq_lane_s32(vreinterpretq_s32_u8(a), 3);
 }
 
-FORCE_INLINE rx_vec_i128 rx_set_int_vec_i128(int _I3, int _I2, int _I1, int _I0) {
+FORCE_INLINE rx_vec_i128 rx_set_int_vec_i128(int i3, int i2, int i1, int i0) {
 	int32_t data[4];
-	data[0] = _I0;
-	data[1] = _I1;
-	data[2] = _I2;
-	data[3] = _I3;
+	data[0] = i0;
+	data[1] = i1;
+	data[2] = i2;
+	data[3] = i3;
 	return vreinterpretq_u8_s32(vld1q_s32(data));
 };
 
@@ -532,6 +542,7 @@ typedef union {
 #define rx_aligned_alloc(a, b) malloc(a)
 #define rx_aligned_free(a) free(a)
 #define rx_prefetch_nta(x)
+#define rx_prefetch_t0(x)
 
 FORCE_INLINE rx_vec_f128 rx_load_vec_f128(const double* pd) {
 	rx_vec_f128 x;
@@ -651,29 +662,29 @@ FORCE_INLINE int rx_vec_i128_w(rx_vec_i128 a) {
 	return a.u32[3];
 }
 
-FORCE_INLINE rx_vec_i128 rx_set_int_vec_i128(int _I3, int _I2, int _I1, int _I0) {
+FORCE_INLINE rx_vec_i128 rx_set_int_vec_i128(int i3, int i2, int i1, int i0) {
 	rx_vec_i128 v;
-	v.u32[0] = _I0;
-	v.u32[1] = _I1;
-	v.u32[2] = _I2;
-	v.u32[3] = _I3;
+	v.u32[0] = i0;
+	v.u32[1] = i1;
+	v.u32[2] = i2;
+	v.u32[3] = i3;
 	return v;
 };
 
-FORCE_INLINE rx_vec_i128 rx_xor_vec_i128(rx_vec_i128 _A, rx_vec_i128 _B) {
+FORCE_INLINE rx_vec_i128 rx_xor_vec_i128(rx_vec_i128 a, rx_vec_i128 b) {
 	rx_vec_i128 c;
-	c.u32[0] = _A.u32[0] ^ _B.u32[0];
-	c.u32[1] = _A.u32[1] ^ _B.u32[1];
-	c.u32[2] = _A.u32[2] ^ _B.u32[2];
-	c.u32[3] = _A.u32[3] ^ _B.u32[3];
+	c.u32[0] = a.u32[0] ^ b.u32[0];
+	c.u32[1] = a.u32[1] ^ b.u32[1];
+	c.u32[2] = a.u32[2] ^ b.u32[2];
+	c.u32[3] = a.u32[3] ^ b.u32[3];
 	return c;
 }
 
-FORCE_INLINE rx_vec_i128 rx_load_vec_i128(rx_vec_i128 const*_P) {
+FORCE_INLINE rx_vec_i128 rx_load_vec_i128(rx_vec_i128 const* p) {
 #if defined(NATIVE_LITTLE_ENDIAN)
-	return *_P;
+	return *p;
 #else
-	uint32_t* ptr = (uint32_t*)_P;
+	const uint32_t* ptr = (const uint32_t*)p;
 	rx_vec_i128 c;
 	c.u32[0] = load32(ptr + 0);
 	c.u32[1] = load32(ptr + 1);
@@ -683,22 +694,22 @@ FORCE_INLINE rx_vec_i128 rx_load_vec_i128(rx_vec_i128 const*_P) {
 #endif
 }
 
-FORCE_INLINE void rx_store_vec_i128(rx_vec_i128 *_P, rx_vec_i128 _B) {
+FORCE_INLINE void rx_store_vec_i128(rx_vec_i128 *p, rx_vec_i128 b) {
 #if defined(NATIVE_LITTLE_ENDIAN)
-	*_P = _B;
+	*p = b;
 #else
-	uint32_t* ptr = (uint32_t*)_P;
-	store32(ptr + 0, _B.u32[0]);
-	store32(ptr + 1, _B.u32[1]);
-	store32(ptr + 2, _B.u32[2]);
-	store32(ptr + 3, _B.u32[3]);
+	uint32_t* ptr = (uint32_t*)p;
+	store32(ptr + 0, b.u32[0]);
+	store32(ptr + 1, b.u32[1]);
+	store32(ptr + 2, b.u32[2]);
+	store32(ptr + 3, b.u32[3]);
 #endif
 }
 
 FORCE_INLINE rx_vec_f128 rx_cvt_packed_int_vec_f128(const void* addr) {
 	rx_vec_f128 x;
-	x.lo = (double)unsigned32ToSigned2sCompl(load32((uint8_t*)addr + 0));
-	x.hi = (double)unsigned32ToSigned2sCompl(load32((uint8_t*)addr + 4));
+	x.lo = (double)unsigned32ToSigned2sCompl(load32((const uint8_t*)addr + 0));
+	x.hi = (double)unsigned32ToSigned2sCompl(load32((const uint8_t*)addr + 4));
 	return x;
 }
 
@@ -728,6 +739,8 @@ FORCE_INLINE rx_vec_i128 rx_aesdec_vec_i128(rx_vec_i128 v, rx_vec_i128 rkey) {
 void rx_reset_float_state();
 
 void rx_set_rounding_mode(uint32_t mode);
+
+uint32_t rx_get_rounding_mode();
 
 #endif
 

@@ -40,9 +40,10 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "../dataset.hpp"
 #include "../blake2/endian.h"
 #include "../common.hpp"
+#include "../jit_compiler.hpp"
 #ifdef _WIN32
 #include <windows.h>
-#include <VersionHelpers.h>
+#include <versionhelpers.h>
 #endif
 #include "affinity.hpp"
 
@@ -94,6 +95,8 @@ void printUsage(const char* executable) {
 	std::cout << "  --ssse3       use optimized Argon2 for SSSE3 CPUs" << std::endl;
 	std::cout << "  --avx2        use optimized Argon2 for AVX2 CPUs" << std::endl;
 	std::cout << "  --auto        select the best options for the current CPU" << std::endl;
+	std::cout << "  --noBatch     calculate hashes one by one (default: batch)" << std::endl;
+	std::cout << "  --commit      calculate commitments instead of hashes (default: hashes)" << std::endl;
 }
 
 struct MemoryException : public std::exception {
@@ -109,11 +112,14 @@ struct DatasetAllocException : public MemoryException {
 	}
 };
 
-void mine(randomx_vm* vm, std::atomic<uint32_t>& atomicNonce, AtomicHash& result, uint32_t noncesCount, int thread, int cpuid=-1) {
+using MineFunc = void(randomx_vm * vm, std::atomic<uint32_t> & atomicNonce, AtomicHash & result, uint32_t noncesCount, int thread, int cpuid);
+
+template<bool batch, bool commit>
+void mine(randomx_vm* vm, std::atomic<uint32_t>& atomicNonce, AtomicHash& result, uint32_t noncesCount, int thread, int cpuid = -1) {
 	if (cpuid >= 0) {
 		int rc = set_thread_affinity(cpuid);
 		if (rc) {
-			std::cerr << "Failed to set thread affinity for thread " << thread << " (error=" << rc << ")" <<  std::endl;
+			std::cerr << "Failed to set thread affinity for thread " << thread << " (error=" << rc << ")" << std::endl;
 		}
 	}
 	uint64_t hash[RANDOMX_HASH_SIZE / sizeof(uint64_t)];
@@ -122,16 +128,30 @@ void mine(randomx_vm* vm, std::atomic<uint32_t>& atomicNonce, AtomicHash& result
 	void* noncePtr = blockTemplate + 39;
 	auto nonce = atomicNonce.fetch_add(1);
 
-	while (nonce < noncesCount) {
+	if (batch) {
 		store32(noncePtr, nonce);
-		randomx_calculate_hash(vm, blockTemplate, sizeof(blockTemplate), &hash);
+		randomx_calculate_hash_first(vm, blockTemplate, sizeof(blockTemplate));
+	}
+
+	while (nonce < noncesCount) {
+		if (batch) {
+			nonce = atomicNonce.fetch_add(1);
+		}
+		store32(noncePtr, nonce);
+		(batch ? randomx_calculate_hash_next : randomx_calculate_hash)(vm, blockTemplate, sizeof(blockTemplate), &hash);
+		if (commit) {
+			randomx_calculate_commitment(blockTemplate, sizeof(blockTemplate), &hash, &hash);
+		}
 		result.xorWith(hash);
-		nonce = atomicNonce.fetch_add(1);
+		if (!batch) {
+			nonce = atomicNonce.fetch_add(1);
+		}
 	}
 }
 
 int main(int argc, char** argv) {
-	bool softAes, miningMode, verificationMode, help, largePages, jit, secure, ssse3, avx2, autoFlags;
+	bool softAes, miningMode, verificationMode, help, largePages, jit, secure, commit;
+	bool ssse3, avx2, autoFlags, noBatch;
 	int noncesCount, threadCount, initThreadCount;
 	uint64_t threadAffinity;
 	int32_t seedValue;
@@ -155,13 +175,21 @@ int main(int argc, char** argv) {
 	readOption("--ssse3", argc, argv, ssse3);
 	readOption("--avx2", argc, argv, avx2);
 	readOption("--auto", argc, argv, autoFlags);
+	readOption("--noBatch", argc, argv, noBatch);
+	readOption("--commit", argc, argv, commit);
 
 	store32(&seed, seedValue);
 
-	std::cout << "RandomX benchmark v1.1.5" << std::endl;
+	std::cout << "RandomX benchmark v1.2.1" << std::endl;
 
-	if (help || (!miningMode && !verificationMode)) {
+	if (help) {
 		printUsage(argv[0]);
+		return 0;
+	}
+
+	if (!miningMode && !verificationMode) {
+		std::cout << "Please select either the fast mode (--mine) or the slow mode (--verify)" << std::endl;
+		std::cout << "Run '" << argv[0] << " --help' to see all supported options" << std::endl;
 		return 0;
 	}
 
@@ -190,7 +218,7 @@ int main(int argc, char** argv) {
 		}
 		if (jit) {
 			flags |= RANDOMX_FLAG_JIT;
-#ifdef __OpenBSD__
+#ifdef RANDOMX_FORCE_SECURE
 			flags |= RANDOMX_FLAG_SECURE;
 #endif
 		}
@@ -202,7 +230,7 @@ int main(int argc, char** argv) {
 	if (miningMode) {
 		flags |= RANDOMX_FLAG_FULL_MEM;
 	}
-#ifndef __OpenBSD__
+#ifndef RANDOMX_FORCE_SECURE
 	if (secure) {
 		flags |= RANDOMX_FLAG_SECURE;
 	}
@@ -252,6 +280,29 @@ int main(int argc, char** argv) {
 
 	if (threadAffinity) {
 		std::cout << " - thread affinity (" << mask_to_string(threadAffinity) << ")" << std::endl;
+	}
+
+	MineFunc* func;
+
+	if (noBatch) {
+		if (commit) {
+			std::cout << " - hash commitments" << std::endl;
+			func = &mine<false, true>;
+		}
+		else {
+			func = &mine<false, false>;
+		}
+	}
+	else {
+		if (commit) {
+			//TODO: support batch mode with commitments
+			std::cout << " - hash commitments" << std::endl;
+			func = &mine<false, true>;
+		}
+		else {
+			std::cout << " - batch mode" << std::endl;
+			func = &mine<true, false>;
+		}
 	}
 
 	std::cout << "Initializing";
@@ -324,14 +375,14 @@ int main(int argc, char** argv) {
 				int cpuid = -1;
 				if (threadAffinity)
 					cpuid = cpuid_from_mask(threadAffinity, i);
-				threads.push_back(std::thread(&mine, vms[i], std::ref(atomicNonce), std::ref(result), noncesCount, i, cpuid));
+				threads.push_back(std::thread(func, vms[i], std::ref(atomicNonce), std::ref(result), noncesCount, i, cpuid));
 			}
 			for (unsigned i = 0; i < threads.size(); ++i) {
 				threads[i].join();
 			}
 		}
 		else {
-			mine(vms[0], std::ref(atomicNonce), std::ref(result), noncesCount, 0);
+			func(vms[0], std::ref(atomicNonce), std::ref(result), noncesCount, 0, -1);
 		}
 
 		double elapsed = sw.getElapsed();
@@ -343,9 +394,9 @@ int main(int argc, char** argv) {
 			randomx_release_cache(cache);
 		std::cout << "Calculated result: ";
 		result.print(std::cout);
-		if (noncesCount == 1000 && seedValue == 0)
+		if (noncesCount == 1000 && seedValue == 0 && !commit)
 			std::cout << "Reference result:  2ef524aee58abcceeb488b28116f6d357411788ded7bdff2fed07002ce7ae987" << std::endl;
-		else if (noncesCount == 10 && seedValue == 0)
+		else if (noncesCount == 10 && seedValue == 0 && !commit)
 			std::cout << "Reference result:  8416fe0d17607f6ec811e7b7dfcf6cd384f7ef3cbfb9ff56ef906a918c9d9b0d" << std::endl;
 		if (!miningMode) {
 			std::cout << "Performance: " << 1000 * elapsed / noncesCount << " ms per hash" << std::endl;

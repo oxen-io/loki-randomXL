@@ -25,26 +25,32 @@
 # OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
+#if defined(__APPLE__)
+#define DECL(x) _##x
+#else
+#define DECL(x) x
+#endif
+
 	.arch armv8-a
 	.text
-	.global	randomx_program_aarch64
-	.global	randomx_program_aarch64_main_loop
-	.global	randomx_program_aarch64_vm_instructions
-	.global randomx_program_aarch64_imul_rcp_literals_end
-	.global	randomx_program_aarch64_vm_instructions_end
-	.global randomx_program_aarch64_cacheline_align_mask1
-	.global randomx_program_aarch64_cacheline_align_mask2
-	.global randomx_program_aarch64_update_spMix1
-	.global randomx_program_aarch64_vm_instructions_end_light
-	.global randomx_program_aarch64_light_cacheline_align_mask
-	.global randomx_program_aarch64_light_dataset_offset
-	.global randomx_init_dataset_aarch64
-	.global randomx_init_dataset_aarch64_end
-	.global randomx_calc_dataset_item_aarch64
-	.global randomx_calc_dataset_item_aarch64_prefetch
-	.global randomx_calc_dataset_item_aarch64_mix
-	.global randomx_calc_dataset_item_aarch64_store_result
-	.global randomx_calc_dataset_item_aarch64_end
+	.global DECL(randomx_program_aarch64)
+	.global DECL(randomx_program_aarch64_main_loop)
+	.global DECL(randomx_program_aarch64_vm_instructions)
+	.global DECL(randomx_program_aarch64_imul_rcp_literals_end)
+	.global DECL(randomx_program_aarch64_vm_instructions_end)
+	.global DECL(randomx_program_aarch64_cacheline_align_mask1)
+	.global DECL(randomx_program_aarch64_cacheline_align_mask2)
+	.global DECL(randomx_program_aarch64_update_spMix1)
+	.global DECL(randomx_program_aarch64_vm_instructions_end_light)
+	.global DECL(randomx_program_aarch64_light_cacheline_align_mask)
+	.global DECL(randomx_program_aarch64_light_dataset_offset)
+	.global DECL(randomx_init_dataset_aarch64)
+	.global DECL(randomx_init_dataset_aarch64_end)
+	.global DECL(randomx_calc_dataset_item_aarch64)
+	.global DECL(randomx_calc_dataset_item_aarch64_prefetch)
+	.global DECL(randomx_calc_dataset_item_aarch64_mix)
+	.global DECL(randomx_calc_dataset_item_aarch64_store_result)
+	.global DECL(randomx_calc_dataset_item_aarch64_end)
 
 #include "configuration.h"
 
@@ -68,9 +74,9 @@
 # x15 -> "r7"
 # x16 -> spAddr0
 # x17 -> spAddr1
-# x18 -> temporary
+# x18 -> unused (platform register, don't touch it)
 # x19 -> temporary
-# x20 -> literal for IMUL_RCP
+# x20 -> temporary
 # x21 -> literal for IMUL_RCP
 # x22 -> literal for IMUL_RCP
 # x23 -> literal for IMUL_RCP
@@ -101,11 +107,11 @@
 # v31 -> scale mask   = 0x81f000000000000081f0000000000000
 
 	.balign 4
-randomx_program_aarch64:
+DECL(randomx_program_aarch64):
 	# Save callee-saved registers
 	sub	sp, sp, 192
 	stp	x16, x17, [sp]
-	stp	x18, x19, [sp, 16]
+	str	x19, [sp, 16]
 	stp	x20, x21, [sp, 32]
 	stp	x22, x23, [sp, 48]
 	stp	x24, x25, [sp, 64]
@@ -160,7 +166,6 @@ randomx_program_aarch64:
 	# Read literals
 	ldr	x0, literal_x0
 	ldr	x11, literal_x11
-	ldr	x20, literal_x20
 	ldr	x21, literal_x21
 	ldr	x22, literal_x22
 	ldr	x23, literal_x23
@@ -189,14 +194,14 @@ randomx_program_aarch64:
 	ldr	q14, literal_v14
 	ldr	q15, literal_v15
 
-randomx_program_aarch64_main_loop:
+DECL(randomx_program_aarch64_main_loop):
 	# spAddr0 = spMix1 & ScratchpadL3Mask64;
 	# spAddr1 = (spMix1 >> 32) & ScratchpadL3Mask64;
-	lsr	x18, x10, 32
+	lsr	x20, x10, 32
 
 	# Actual mask will be inserted by JIT compiler
 	and	w16, w10, 1
-	and	w17, w18, 1
+	and	w17, w20, 1
 
 	# x16 = scratchpad + spAddr0
 	# x17 = scratchpad + spAddr1
@@ -204,31 +209,31 @@ randomx_program_aarch64_main_loop:
 	add	x17, x17, x2
 
 	# xor integer registers with scratchpad data (spAddr0)
-	ldp	x18, x19, [x16]
-	eor	x4, x4, x18
+	ldp	x20, x19, [x16]
+	eor	x4, x4, x20
 	eor	x5, x5, x19
-	ldp	x18, x19, [x16, 16]
-	eor	x6, x6, x18
+	ldp	x20, x19, [x16, 16]
+	eor	x6, x6, x20
 	eor	x7, x7, x19
-	ldp	x18, x19, [x16, 32]
-	eor	x12, x12, x18
+	ldp	x20, x19, [x16, 32]
+	eor	x12, x12, x20
 	eor	x13, x13, x19
-	ldp	x18, x19, [x16, 48]
-	eor	x14, x14, x18
+	ldp	x20, x19, [x16, 48]
+	eor	x14, x14, x20
 	eor	x15, x15, x19
 
 	# Load group F registers (spAddr1)
-	ldpsw	x18, x19, [x17]
-	ins	v16.d[0], x18
+	ldpsw	x20, x19, [x17]
+	ins	v16.d[0], x20
 	ins	v16.d[1], x19
-	ldpsw	x18, x19, [x17, 8]
-	ins	v17.d[0], x18
+	ldpsw	x20, x19, [x17, 8]
+	ins	v17.d[0], x20
 	ins	v17.d[1], x19
-	ldpsw	x18, x19, [x17, 16]
-	ins	v18.d[0], x18
+	ldpsw	x20, x19, [x17, 16]
+	ins	v18.d[0], x20
 	ins	v18.d[1], x19
-	ldpsw	x18, x19, [x17, 24]
-	ins	v19.d[0], x18
+	ldpsw	x20, x19, [x17, 24]
+	ins	v19.d[0], x20
 	ins	v19.d[1], x19
 	scvtf	v16.2d, v16.2d
 	scvtf	v17.2d, v17.2d
@@ -236,17 +241,17 @@ randomx_program_aarch64_main_loop:
 	scvtf	v19.2d, v19.2d
 
 	# Load group E registers (spAddr1)
-	ldpsw	x18, x19, [x17, 32]
-	ins	v20.d[0], x18
+	ldpsw	x20, x19, [x17, 32]
+	ins	v20.d[0], x20
 	ins	v20.d[1], x19
-	ldpsw	x18, x19, [x17, 40]
-	ins	v21.d[0], x18
+	ldpsw	x20, x19, [x17, 40]
+	ins	v21.d[0], x20
 	ins	v21.d[1], x19
-	ldpsw	x18, x19, [x17, 48]
-	ins	v22.d[0], x18
+	ldpsw	x20, x19, [x17, 48]
+	ins	v22.d[0], x20
 	ins	v22.d[1], x19
-	ldpsw	x18, x19, [x17, 56]
-	ins	v23.d[0], x18
+	ldpsw	x20, x19, [x17, 56]
+	ins	v23.d[0], x20
 	ins	v23.d[1], x19
 	scvtf	v20.2d, v20.2d
 	scvtf	v21.2d, v21.2d
@@ -262,7 +267,7 @@ randomx_program_aarch64_main_loop:
 	orr	v23.16b, v23.16b, v30.16b
 
 	# Execute VM instructions
-randomx_program_aarch64_vm_instructions:
+DECL(randomx_program_aarch64_vm_instructions):
 
 	# buffer for generated instructions
 	# FDIV_M is the largest instruction taking up to 12 ARMv8 instructions
@@ -270,7 +275,6 @@ randomx_program_aarch64_vm_instructions:
 
 literal_x0:  .fill 1,8,0
 literal_x11: .fill 1,8,0
-literal_x20: .fill 1,8,0
 literal_x21: .fill 1,8,0
 literal_x22: .fill 1,8,0
 literal_x23: .fill 1,8,0
@@ -281,7 +285,7 @@ literal_x27: .fill 1,8,0
 literal_x28: .fill 1,8,0
 literal_x29: .fill 1,8,0
 literal_x30: .fill 1,8,0
-randomx_program_aarch64_imul_rcp_literals_end:
+DECL(randomx_program_aarch64_imul_rcp_literals_end):
 
 literal_v0:  .fill 2,8,0
 literal_v1:  .fill 2,8,0
@@ -300,47 +304,49 @@ literal_v13: .fill 2,8,0
 literal_v14: .fill 2,8,0
 literal_v15: .fill 2,8,0
 
-randomx_program_aarch64_vm_instructions_end:
+DECL(randomx_program_aarch64_vm_instructions_end):
+	# Calculate dataset pointer for dataset read
+	# Do it here to break false dependency from readReg2 and readReg3 (see next line)
+	lsr	x10, x9, 32
 
 	# mx ^= r[readReg2] ^ r[readReg3];
-	eor	x9, x9, x18
+	eor	x9, x9, x20
 
 	# Calculate dataset pointer for dataset prefetch
-	mov	w18, w9
-randomx_program_aarch64_cacheline_align_mask1:
+	mov	w20, w9
+DECL(randomx_program_aarch64_cacheline_align_mask1):
 	# Actual mask will be inserted by JIT compiler
-	and	x18, x18, 1
-	add	x18, x18, x1
+	and	x20, x20, 1
+	add	x20, x20, x1
 
 	# Prefetch dataset data
-	prfm	pldl2strm, [x18]
+	prfm	pldl2strm, [x20]
 
 	# mx <-> ma
 	ror	x9, x9, 32
 
-	# Calculate dataset pointer for dataset read
-	mov	w10, w9
-randomx_program_aarch64_cacheline_align_mask2:
+DECL(randomx_program_aarch64_cacheline_align_mask2):
 	# Actual mask will be inserted by JIT compiler
 	and	x10, x10, 1
 	add	x10, x10, x1
 
-randomx_program_aarch64_xor_with_dataset_line:
+DECL(randomx_program_aarch64_xor_with_dataset_line):
+rx_program_xor_with_dataset_line:
 	# xor integer registers with dataset data
-	ldp	x18, x19, [x10]
-	eor	x4, x4, x18
+	ldp	x20, x19, [x10]
+	eor	x4, x4, x20
 	eor	x5, x5, x19
-	ldp	x18, x19, [x10, 16]
-	eor	x6, x6, x18
+	ldp	x20, x19, [x10, 16]
+	eor	x6, x6, x20
 	eor	x7, x7, x19
-	ldp	x18, x19, [x10, 32]
-	eor	x12, x12, x18
+	ldp	x20, x19, [x10, 32]
+	eor	x12, x12, x20
 	eor	x13, x13, x19
-	ldp	x18, x19, [x10, 48]
-	eor	x14, x14, x18
+	ldp	x20, x19, [x10, 48]
+	eor	x14, x14, x20
 	eor	x15, x15, x19
 
-randomx_program_aarch64_update_spMix1:
+DECL(randomx_program_aarch64_update_spMix1):
 	# JIT compiler will replace it with "eor x10, config.readReg0, config.readReg1"
 	eor	x10, x0, x0
 
@@ -361,7 +367,7 @@ randomx_program_aarch64_update_spMix1:
 	stp	q18, q19, [x16, 32]
 
 	subs	x3, x3, 1
-	bne	randomx_program_aarch64_main_loop
+	bne	DECL(randomx_program_aarch64_main_loop)
 	
 	# Restore x0
 	ldr	x0, [sp], 16
@@ -380,7 +386,7 @@ randomx_program_aarch64_update_spMix1:
 
 	# Restore callee-saved registers
 	ldp	x16, x17, [sp]
-	ldp	x18, x19, [sp, 16]
+	ldr	x19, [sp, 16]
 	ldp	x20, x21, [sp, 32]
 	ldp	x22, x23, [sp, 48]
 	ldp	x24, x25, [sp, 64]
@@ -395,13 +401,13 @@ randomx_program_aarch64_update_spMix1:
 
 	ret
 
-randomx_program_aarch64_vm_instructions_end_light:
+DECL(randomx_program_aarch64_vm_instructions_end_light):
 	sub	sp, sp, 96
 	stp	x0, x1, [sp, 64]
 	stp	x2, x30, [sp, 80]
 
 	# mx ^= r[readReg2] ^ r[readReg3];
-	eor	x9, x9, x18
+	eor	x9, x9, x20
 
 	# mx <-> ma
 	ror	x9, x9, 32
@@ -412,26 +418,26 @@ randomx_program_aarch64_vm_instructions_end_light:
 	# x1 -> pointer to output
 	mov	x1, sp
 
-randomx_program_aarch64_light_cacheline_align_mask:
+DECL(randomx_program_aarch64_light_cacheline_align_mask):
 	# Actual mask will be inserted by JIT compiler
 	and	w2, w9, 1
 
 	# x2 -> item number
 	lsr	x2, x2, 6
 
-randomx_program_aarch64_light_dataset_offset:
+DECL(randomx_program_aarch64_light_dataset_offset):
 	# Apply dataset offset (filled in by JIT compiler)
 	add	x2, x2, 0
 	add	x2, x2, 0
 
-	bl	randomx_calc_dataset_item_aarch64
+	bl	rx_calc_dataset_item
 
 	mov	x10, sp
 	ldp	x0, x1, [sp, 64]
 	ldp	x2, x30, [sp, 80]
 	add	sp, sp, 96
 
-	b	randomx_program_aarch64_xor_with_dataset_line
+	b	rx_program_xor_with_dataset_line
 
 
 
@@ -442,26 +448,26 @@ randomx_program_aarch64_light_dataset_offset:
 # x2 -> start item
 # x3 -> end item
 
-randomx_init_dataset_aarch64:
-	# Save x30 (return address)
-	str	x30, [sp, -16]!
+DECL(randomx_init_dataset_aarch64):
+	# Save x20 (used as temporary, but must be saved to not break ABI) and x30 (return address)
+	stp	x20, x30, [sp, -16]!
 
 	# Load pointer to cache memory
 	ldr	x0, [x0]
 
-randomx_init_dataset_aarch64_main_loop:
-	bl	randomx_calc_dataset_item_aarch64
+DECL(randomx_init_dataset_aarch64_main_loop):
+	bl	rx_calc_dataset_item
 	add	x1, x1, 64
 	add	x2, x2, 1
 	cmp	x2, x3
-	bne	randomx_init_dataset_aarch64_main_loop
+	bne	DECL(randomx_init_dataset_aarch64_main_loop)
 
-	# Restore x30 (return address)
-	ldr	x30, [sp], 16
+	# Restore x20 and x30
+	ldp	x20, x30, [sp], 16
 
 	ret
 
-randomx_init_dataset_aarch64_end:
+DECL(randomx_init_dataset_aarch64_end):
 
 # Input parameters
 #
@@ -479,7 +485,8 @@ randomx_init_dataset_aarch64_end:
 # x12 -> temporary
 # x13 -> temporary
 
-randomx_calc_dataset_item_aarch64:
+DECL(randomx_calc_dataset_item_aarch64):
+rx_calc_dataset_item:
 	sub	sp, sp, 112
 	stp	x0, x1, [sp]
 	stp	x2, x3, [sp, 16]
@@ -526,7 +533,7 @@ randomx_calc_dataset_item_aarch64:
 	ldr	x12, superscalarAdd7
 	eor	x7, x0, x12
 
-	b	randomx_calc_dataset_item_aarch64_prefetch
+	b	rx_calc_dataset_item_prefetch
 
 superscalarMul0: .quad 6364136223846793005
 superscalarAdd1: .quad 9298411001130361340
@@ -539,7 +546,8 @@ superscalarAdd7: .quad 9549104520008361294
 
 # Prefetch -> SuperScalar hash -> Mix will be repeated N times
 
-randomx_calc_dataset_item_aarch64_prefetch:
+DECL(randomx_calc_dataset_item_aarch64_prefetch):
+rx_calc_dataset_item_prefetch:
 	# Actual mask will be inserted by JIT compiler
 	and	x11, x10, 1
 	add	x11, x8, x11, lsl 6
@@ -547,7 +555,7 @@ randomx_calc_dataset_item_aarch64_prefetch:
 
 	# Generated SuperScalar hash program goes here
 
-randomx_calc_dataset_item_aarch64_mix:
+DECL(randomx_calc_dataset_item_aarch64_mix):
 	ldp	x12, x13, [x11]
 	eor	x0, x0, x12
 	eor	x1, x1, x13
@@ -561,7 +569,7 @@ randomx_calc_dataset_item_aarch64_mix:
 	eor	x6, x6, x12
 	eor	x7, x7, x13
 
-randomx_calc_dataset_item_aarch64_store_result:
+DECL(randomx_calc_dataset_item_aarch64_store_result):
 	stp	x0, x1, [x9]
 	stp	x2, x3, [x9, 16]
 	stp	x4, x5, [x9, 32]
@@ -578,4 +586,4 @@ randomx_calc_dataset_item_aarch64_store_result:
 
 	ret
 
-randomx_calc_dataset_item_aarch64_end:
+DECL(randomx_calc_dataset_item_aarch64_end):

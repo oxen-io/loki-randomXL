@@ -30,7 +30,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #if defined(_M_X64) || defined(__x86_64__)
 	#define HAVE_CPUID
-	#ifdef _WIN32
+	#if defined(_MSC_VER)
 		#include <intrin.h>
 		#define cpuid(info, x) __cpuidex(info, x, 0)
 	#else //GCC
@@ -62,9 +62,13 @@ namespace randomx {
 			cpuid(info, 0x00000007);
 			avx2_ = (info[1] & (1 << 5)) != 0;
 		}
-#elif defined(__aarch64__) && defined(HWCAP_AES)
+#elif defined(__aarch64__)
+	#if defined(HWCAP_AES)
 		long hwcaps = getauxval(AT_HWCAP);
 		aes_ = (hwcaps & HWCAP_AES) != 0;
+	#elif defined(__APPLE__)
+		aes_ = true;
+	#endif
 #endif
 		//TODO POWER8 AES
 	}

@@ -37,12 +37,19 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <cassert>
 #include <limits>
 
+#if defined(__SSE__) || defined(__SSE2__) || (defined(_M_IX86_FP) && (_M_IX86_FP > 0))
+#define USE_CSR_INTRINSICS
+#include <xmmintrin.h>
+#else
+#include <cfenv>
+#endif
+
 extern "C" {
 
 	randomx_flags randomx_get_flags() {
 		randomx_flags flags = RANDOMX_HAVE_COMPILER ? RANDOMX_FLAG_JIT : RANDOMX_FLAG_DEFAULT;
 		randomx::Cpu cpu;
-#ifdef __OpenBSD__
+#ifdef RANDOMX_FORCE_SECURE
 		if (flags == RANDOMX_FLAG_JIT) {
 			flags |= RANDOMX_FLAG_SECURE;
 		}
@@ -112,6 +119,10 @@ extern "C" {
 				cache = nullptr;
 			}
 		}
+		if (cache && cache->memory == nullptr) {
+			randomx_release_cache(cache);
+			cache = nullptr;
+		}
 
 		return cache;
 	}
@@ -129,9 +140,7 @@ extern "C" {
 
 	void randomx_release_cache(randomx_cache* cache) {
 		assert(cache != nullptr);
-		if (cache->memory != nullptr) {
-			cache->dealloc(cache);
-		}
+		cache->dealloc(cache);
 		delete cache;
 	}
 
@@ -160,6 +169,10 @@ extern "C" {
 				randomx_release_dataset(dataset);
 				dataset = nullptr;
 			}
+		}
+		if (dataset && dataset->memory == nullptr) {
+			randomx_release_dataset(dataset);
+			dataset = nullptr;
 		}
 
 		return dataset;
@@ -328,7 +341,7 @@ extern "C" {
 	void randomx_vm_set_cache(randomx_vm *machine, randomx_cache* cache) {
 		assert(machine != nullptr);
 		assert(cache != nullptr && cache->isInitialized());
-		if (machine->cacheKey != cache->cacheKey) {
+		if (machine->cacheKey != cache->cacheKey || machine->getMemory() != cache->memory) {
 			machine->setCache(cache);
 			machine->cacheKey = cache->cacheKey;
 		}
@@ -349,6 +362,14 @@ extern "C" {
 		assert(machine != nullptr);
 		assert(inputSize == 0 || input != nullptr);
 		assert(output != nullptr);
+
+#ifdef USE_CSR_INTRINSICS
+		const unsigned int fpstate = _mm_getcsr();
+#else
+		fenv_t fpstate;
+		fegetenv(&fpstate);
+#endif
+
 		alignas(16) uint64_t tempHash[8];
 		int blakeResult = blake2b(tempHash, sizeof(tempHash), input, inputSize, nullptr, 0);
 		assert(blakeResult == 0);
@@ -361,6 +382,50 @@ extern "C" {
 		}
 		machine->run(&tempHash);
 		machine->getFinalResult(output, RANDOMX_HASH_SIZE);
+
+#ifdef USE_CSR_INTRINSICS
+		_mm_setcsr(fpstate);
+#else
+		fesetenv(&fpstate);
+#endif
 	}
 
+	void randomx_calculate_hash_first(randomx_vm* machine, const void* input, size_t inputSize) {
+		blake2b(machine->tempHash, sizeof(machine->tempHash), input, inputSize, nullptr, 0);
+		machine->initScratchpad(machine->tempHash);
+	}
+
+	void randomx_calculate_hash_next(randomx_vm* machine, const void* nextInput, size_t nextInputSize, void* output) {
+		machine->resetRoundingMode();
+		for (uint32_t chain = 0; chain < RANDOMX_PROGRAM_COUNT - 1; ++chain) {
+			machine->run(machine->tempHash);
+			blake2b(machine->tempHash, sizeof(machine->tempHash), machine->getRegisterFile(), sizeof(randomx::RegisterFile), nullptr, 0);
+		}
+		machine->run(machine->tempHash);
+
+		// Finish current hash and fill the scratchpad for the next hash at the same time
+		blake2b(machine->tempHash, sizeof(machine->tempHash), nextInput, nextInputSize, nullptr, 0);
+		machine->hashAndFill(output, RANDOMX_HASH_SIZE, machine->tempHash);
+	}
+
+	void randomx_calculate_hash_last(randomx_vm* machine, void* output) {
+		machine->resetRoundingMode();
+		for (int chain = 0; chain < RANDOMX_PROGRAM_COUNT - 1; ++chain) {
+			machine->run(machine->tempHash);
+			blake2b(machine->tempHash, sizeof(machine->tempHash), machine->getRegisterFile(), sizeof(randomx::RegisterFile), nullptr, 0);
+		}
+		machine->run(machine->tempHash);
+		machine->getFinalResult(output, RANDOMX_HASH_SIZE);
+	}
+
+	void randomx_calculate_commitment(const void* input, size_t inputSize, const void* hash_in, void* com_out) {
+		assert(inputSize == 0 || input != nullptr);
+		assert(hash_in != nullptr);
+		assert(com_out != nullptr);
+		blake2b_state state;
+		blake2b_init(&state, RANDOMX_HASH_SIZE);
+		blake2b_update(&state, input, inputSize);
+		blake2b_update(&state, hash_in, RANDOMX_HASH_SIZE);
+		blake2b_final(&state, com_out, RANDOMX_HASH_SIZE);
+	}
 }

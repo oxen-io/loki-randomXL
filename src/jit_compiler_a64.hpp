@@ -38,7 +38,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 namespace randomx {
 
 	class Program;
-	class ProgramConfiguration;
+	struct ProgramConfiguration;
 	class SuperscalarProgram;
 	class Instruction;
 
@@ -81,7 +81,7 @@ namespace randomx {
 
 		static void emit64(uint64_t val, uint8_t* code, uint32_t& codePos)
 		{
-			*(uint64_t*)(code + codePos) = val;
+			memcpy(code + codePos, &val, sizeof(val));
 			codePos += sizeof(val);
 		}
 
