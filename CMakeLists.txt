@@ -58,7 +58,7 @@ src/blake2/blake2b.c)
 
 option(RANDOMX_ENABLE_JIT "Enables building the jit compiler (for amd64 or arm64)" ON)
 if(NOT RANDOMX_ENABLE_JIT)
-  add_definitions(-DRANDOMX_NO_JIT)
+  target_compile_definitions(randomx PUBLIC RANDOMX_NO_JIT)
 endif()
 
 if(NOT ARCH_ID)
