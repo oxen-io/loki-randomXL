@@ -1039,31 +1039,31 @@ int main() {
 	randomx_release_cache(cache);
 	cache = randomx_alloc_cache(RANDOMX_FLAG_ARGON2_SSSE3);
 
-	runTest("Cache initialization: SSSE3", (flags & RANDOMX_FLAG_ARGON2_SSSE3) && RANDOMX_ARGON_ITERATIONS == 3 && RANDOMX_ARGON_LANES == 1 && RANDOMX_ARGON_MEMORY == 262144 && stringsEqual(RANDOMX_ARGON_SALT, "RandomX\x03"), []() {
+	runTest("Cache initialization: SSSE3", (flags & RANDOMX_FLAG_ARGON2_SSSE3) && RANDOMX_ARGON_ITERATIONS == 4 && RANDOMX_ARGON_LANES == 2 && RANDOMX_ARGON_MEMORY == 262144 && stringsEqual(RANDOMX_ARGON_SALT, "RandomXL\x12"), []() {
 		initCache("test key 000");
 		uint64_t* cacheMemory = (uint64_t*)cache->memory;
-		assert(cacheMemory[0] == 0x191e0e1d23c02186);
-		assert(cacheMemory[1568413] == 0xf1b62fe6210bf8b1);
-		assert(cacheMemory[33554431] == 0x1f47f056d05cd99b);
+		assert(cacheMemory[0] == 0x413250d3e1b4e456);
+		assert(cacheMemory[1568413] == 0xbc5c1717fc1c77d1);
+		assert(cacheMemory[33554431] == 0x11f7918ddf487871);
 	});
 
 	if (cache != nullptr)
 		randomx_release_cache(cache);
 	cache = randomx_alloc_cache(RANDOMX_FLAG_ARGON2_AVX2);
 
-	runTest("Cache initialization: AVX2", (flags & RANDOMX_FLAG_ARGON2_AVX2) && RANDOMX_ARGON_ITERATIONS == 3 && RANDOMX_ARGON_LANES == 1 && RANDOMX_ARGON_MEMORY == 262144 && stringsEqual(RANDOMX_ARGON_SALT, "RandomX\x03"), []() {
+	runTest("Cache initialization: AVX2", (flags & RANDOMX_FLAG_ARGON2_AVX2) && RANDOMX_ARGON_ITERATIONS == 4 && RANDOMX_ARGON_LANES == 2 && RANDOMX_ARGON_MEMORY == 262144 && stringsEqual(RANDOMX_ARGON_SALT, "RandomXL\x12"), []() {
 		initCache("test key 000");
 		uint64_t* cacheMemory = (uint64_t*)cache->memory;
-		assert(cacheMemory[0] == 0x191e0e1d23c02186);
-		assert(cacheMemory[1568413] == 0xf1b62fe6210bf8b1);
-		assert(cacheMemory[33554431] == 0x1f47f056d05cd99b);
+		assert(cacheMemory[0] == 0x413250d3e1b4e456);
+		assert(cacheMemory[1568413] == 0xbc5c1717fc1c77d1);
+		assert(cacheMemory[33554431] == 0x11f7918ddf487871);
 	});
 
 	if (cache != nullptr)
 		randomx_release_cache(cache);
 	cache = randomx_alloc_cache(RANDOMX_FLAG_DEFAULT);
 
-	runTest("Hash batch test", RANDOMX_HAVE_COMPILER && stringsEqual(RANDOMX_ARGON_SALT, "RandomX\x03"), []() {
+	runTest("Hash batch test", RANDOMX_HAVE_COMPILER && stringsEqual(RANDOMX_ARGON_SALT, "RandomXL\x12"), []() {
 		char hash1[RANDOMX_HASH_SIZE];
 		char hash2[RANDOMX_HASH_SIZE];
 		char hash3[RANDOMX_HASH_SIZE];
@@ -1077,16 +1077,16 @@ int main() {
 		randomx_calculate_hash_next(vm, input3, sizeof(input3) - 1, &hash2);
 		randomx_calculate_hash_last(vm, &hash3);
 
-		assert(equalsHex(hash1, "639183aae1bf4c9a35884cb46b09cad9175f04efd7684e7262a0ac1c2f0b4e3f"));
-		assert(equalsHex(hash2, "300a0adb47603dedb42228ccb2b211104f4da45af709cd7547cd049e9489c969"));
-		assert(equalsHex(hash3, "c36d4ed4191e617309867ed66a443be4075014e2b061bcdaf9ce7b721d2b77a8"));
+		assert(equalsHex(hash1, "b291ec8a532bc4f78bd75b43d211e1169bb65b1a8f66d4250376ba1d6fcff1bd"));
+		assert(equalsHex(hash2, "26ed27ceff5015dd8f734158e02a22dcec60ab4b4a1fb307d6e6b625be2ae890"));
+		assert(equalsHex(hash3, "d732b38e9801c2fe7c247e8986f2af78fad907f5cf288a88b66ab3a0654c140b"));
 	});
 
 	runTest("Preserve rounding mode", RANDOMX_FREQ_CFROUND > 0, []() {
 		rx_set_rounding_mode(RoundToNearest);
 		char hash[RANDOMX_HASH_SIZE];
 		calcStringHash("test key 000", "Lorem ipsum dolor sit amet", &hash);
-		assert(equalsHex(hash, "300a0adb47603dedb42228ccb2b211104f4da45af709cd7547cd049e9489c969"));
+		assert(equalsHex(hash, "26ed27ceff5015dd8f734158e02a22dcec60ab4b4a1fb307d6e6b625be2ae890"));
 		assert(rx_get_rounding_mode() == RoundToNearest);
 	});
 
@@ -1100,10 +1100,10 @@ int main() {
 #endif
 	}
 
-	runTest("Commitment test", stringsEqual(RANDOMX_ARGON_SALT, "RandomX\x03"), []() {
+	runTest("Commitment test", stringsEqual(RANDOMX_ARGON_SALT, "RandomXL\x12"), []() {
 		char hash[RANDOMX_HASH_SIZE];
 		calcStringCommitment("test key 000", "This is a test", &hash);
-		assert(equalsHex(hash, "d53ccf348b75291b7be76f0a7ac8208bbced734b912f6fca60539ab6f86be919"));
+		assert(equalsHex(hash, "8f8c686d586498275662a946ec6b7b56d23ba13dd4490229f607e9428dbd33f5"));
 	});
 
 	randomx_destroy_vm(vm);
