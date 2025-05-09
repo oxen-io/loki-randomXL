@@ -95,7 +95,7 @@ function(add_flag flag)
 endfunction()
 
 # x86-64
-if ((CMAKE_SIZEOF_VOID_P EQUAL 8) AND (ARCH_ID STREQUAL "x86_64" OR ARCH_ID STREQUAL "x86-64" OR ARCH_ID STREQUAL "amd64"))
+if (RANDOMX_ENABLE_JIT AND (CMAKE_SIZEOF_VOID_P EQUAL 8) AND (ARCH_ID STREQUAL "x86_64" OR ARCH_ID STREQUAL "x86-64" OR ARCH_ID STREQUAL "amd64"))
   target_sources(randomx PRIVATE src/jit_compiler_x86.cpp)
 
   if(MSVC)
@@ -148,7 +148,7 @@ if(ARCH_ID STREQUAL "ppc64" OR ARCH_ID STREQUAL "ppc64le")
 endif()
 
 # ARMv8
-if(ARM_ID STREQUAL "aarch64" OR ARM_ID STREQUAL "arm64" OR ARM_ID STREQUAL "armv8-a")
+if(RANDOMX_ENABLE_JIT AND (ARM_ID STREQUAL "aarch64" OR ARM_ID STREQUAL "arm64" OR ARM_ID STREQUAL "armv8-a"))
   target_sources(randomx PRIVATE
     src/jit_compiler_a64_static.S
     src/jit_compiler_a64.cpp)
@@ -172,7 +172,7 @@ if(ARM_ID STREQUAL "aarch64" OR ARM_ID STREQUAL "arm64" OR ARM_ID STREQUAL "armv
 endif()
 
 # RISC-V
-if(ARCH_ID STREQUAL "riscv64")
+if(RANDOMX_ENABLE_JIT AND ARCH_ID STREQUAL "riscv64")
   target_sources(randomx PRIVATE
     src/jit_compiler_rv64_static.S
     src/jit_compiler_rv64.cpp)
